@@ -1,3 +1,33 @@
+# Add at the top
+from aiohttp import web
+import pathlib
+
+# Serve index.html
+async def index(request):
+    path = pathlib.Path(__file__).parent / "index.html"
+    return web.FileResponse(path)
+
+app = web.Application()
+app.router.add_get("/", index)
+
+# Mount your websocket handler on /ws
+async def websocket_handler(request):
+    ws = web.WebSocketResponse()
+    await ws.prepare(request)
+    
+    user = None
+    async for msg in ws:
+        if msg.type == web.WSMsgType.TEXT:
+            data = json.loads(msg.data)
+            # Copy your websocket handler logic here (login, message, delete, seen...)
+        elif msg.type == web.WSMsgType.ERROR:
+            print("ws connection closed", ws.exception())
+
+    return ws
+
+app.router.add_get("/ws", websocket_handler)
+
+web.run_app(app, port=int(os.environ.get("PORT", 3000)))
 import asyncio
 import websockets
 import json
