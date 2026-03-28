@@ -36,6 +36,7 @@ async def handler(websocket):
                     user = username
                     clients[user] = websocket
 
+                    # Send login success + chat history
                     await websocket.send(json.dumps({
                         "type": "login",
                         "status": "success",
@@ -56,18 +57,17 @@ async def handler(websocket):
 
                 data["id"] = str(uuid.uuid4())
                 data["time"] = datetime.now().strftime("%H:%M")
+                data["seen_by"] = []  # ✅ Track seen users
                 chat_history.append(data)
 
                 for ws in clients.values():
                     await ws.send(json.dumps(data))
 
-                with open("chat.txt", "a") as f:
-                    f.write(f"{data['user']}: {data['text']} ({data['time']})\n")
-
             # 📸 IMAGE
             elif data["type"] == "image":
                 data["id"] = str(uuid.uuid4())
                 data["time"] = datetime.now().strftime("%H:%M")
+                data["seen_by"] = []  # ✅ Track seen users
                 chat_history.append(data)
 
                 for ws in clients.values():
@@ -76,7 +76,6 @@ async def handler(websocket):
             # ❌ DELETE MESSAGE
             elif data["type"] == "delete":
                 msg_id = data["id"]
-
                 global chat_history
                 chat_history = [msg for msg in chat_history if msg.get("id") != msg_id]
 
@@ -84,6 +83,20 @@ async def handler(websocket):
                     await ws.send(json.dumps({
                         "type": "delete",
                         "id": msg_id
+                    }))
+
+            # 👀 SEEN MESSAGE
+            elif data["type"] == "seen":
+                msg_id = data["id"]
+                for msg in chat_history:
+                    if msg.get("id") == msg_id and user not in msg["seen_by"]:
+                        msg["seen_by"].append(user)
+
+                for ws in clients.values():
+                    await ws.send(json.dumps({
+                        "type": "seen",
+                        "id": msg_id,
+                        "seen_by": chat_history[[m["id"] for m in chat_history].index(msg_id)]["seen_by"]
                     }))
 
             # 💬 TYPING
@@ -97,7 +110,6 @@ async def handler(websocket):
 
 async def main():
     PORT = int(os.environ.get("PORT", 3000))
-
     async with websockets.serve(handler, "0.0.0.0", PORT):
         print(f"✅ Server running on port {PORT}")
         await asyncio.Future()
