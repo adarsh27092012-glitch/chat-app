@@ -1,38 +1,38 @@
 <!DOCTYPE html>
 <html>
 <head>
-<script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-gray-200 flex items-center justify-center h-screen">
 
 <div class="w-full max-w-md bg-white rounded-2xl shadow-lg flex flex-col">
 
-<div class="p-3 bg-green-600 text-white text-center font-bold">Chat App</div>
+  <div class="p-3 bg-green-600 text-white text-center font-bold">Chat App</div>
 
-<div id="login" class="p-4">
-  <input id="user" placeholder="Username" class="border p-2 w-full mb-2 rounded" />
-  <input id="pass" type="password" placeholder="Password" class="border p-2 w-full mb-2 rounded" />
-  <button onclick="login()" class="bg-green-600 text-white w-full p-2 rounded">Login</button>
-</div>
-
-<div id="chat" class="hidden flex flex-col h-96">
-  <div id="typing" class="text-sm text-gray-500 px-2"></div>
-  <div id="box" class="flex-1 overflow-y-auto p-3 space-y-2"></div>
-
-  <input type="file" onchange="sendImage(event)" class="p-2" />
-
-  <div class="flex p-2 gap-2">
-    <input id="msg" oninput="typing()" class="flex-1 border p-2 rounded" placeholder="Type message..." />
-    <button onclick="sendMsg()" class="bg-blue-500 text-white px-4 rounded">Send</button>
+  <!-- Login Screen -->
+  <div id="login" class="p-4">
+    <input id="user" placeholder="Username" class="border p-2 w-full mb-2 rounded" />
+    <input id="pass" type="password" placeholder="Password" class="border p-2 w-full mb-2 rounded" />
+    <button onclick="login()" class="bg-green-600 text-white w-full p-2 rounded">Login</button>
   </div>
-</div>
+
+  <!-- Chat Screen -->
+  <div id="chat" class="hidden flex flex-col h-96">
+    <div id="typing" class="text-sm text-gray-500 px-2"></div>
+    <div id="box" class="flex-1 overflow-y-auto p-3 space-y-2"></div>
+
+    <input type="file" onchange="sendImage(event)" class="p-2" />
+
+    <div class="flex p-2 gap-2">
+      <input id="msg" oninput="typing()" class="flex-1 border p-2 rounded" placeholder="Type message..." />
+      <button onclick="sendMsg()" class="bg-blue-500 text-white px-4 rounded">Send</button>
+    </div>
+  </div>
 
 </div>
-
-<audio id="sound" src="https://www.soundjay.com/buttons/sounds/button-3.mp3"></audio>
 
 <script>
-const socket = new WebSocket("wss://chat-app-uncb.onrender.com"); // 🔥 replace this
+const socket = new WebSocket("wss://chat-app-uncb.onrender.com"); // 🔥 Your global server
 let username = "";
 let typingTimeout;
 
@@ -50,7 +50,7 @@ socket.onmessage = (event) => {
 
   if (data.type === "message" || data.type === "image") {
     show(data);
-    document.getElementById("sound").play();
+    markSeen(data.id); // ✅ Mark message as seen
   }
 
   if (data.type === "delete") {
@@ -65,20 +65,31 @@ socket.onmessage = (event) => {
   if (data.type === "stop_typing") {
     document.getElementById("typing").innerText = "";
   }
+
+  if (data.type === "seen") {
+    const msg = document.querySelector(`[data-id='${data.id}']`);
+    if(msg) {
+      const seenText = msg.querySelector(".seen");
+      if(seenText) seenText.innerText = "Seen: " + data.seen_by.join(", ");
+    }
+  }
 };
 
+// 🔒 Login function
 function login() {
   username = document.getElementById("user").value;
   const password = document.getElementById("pass").value;
   socket.send(JSON.stringify({type:"login", username, password}));
 }
 
+// 💬 Send message
 function sendMsg() {
   const text = document.getElementById("msg").value;
   socket.send(JSON.stringify({type:"message", user:username, text}));
   document.getElementById("msg").value = "";
 }
 
+// 📸 Send image
 function sendImage(e) {
   const file = e.target.files[0];
   const reader = new FileReader();
@@ -90,13 +101,12 @@ function sendImage(e) {
   reader.readAsDataURL(file);
 }
 
+// ❌ Delete message
 function deleteMsg(id) {
-  socket.send(JSON.stringify({
-    type: "delete",
-    id: id
-  }));
+  socket.send(JSON.stringify({type: "delete", id: id}));
 }
 
+// ✍️ Typing indicator
 function typing() {
   socket.send(JSON.stringify({type:"typing", user:username}));
 
@@ -106,6 +116,12 @@ function typing() {
   }, 1000);
 }
 
+// 👀 Mark message as seen
+function markSeen(id){
+  socket.send(JSON.stringify({type:"seen", id:id}));
+}
+
+// 🖼️ Display message or image
 function show(data) {
   const box = document.getElementById("box");
   const div = document.createElement("div");
@@ -113,18 +129,21 @@ function show(data) {
   div.setAttribute("data-id", data.id);
 
   if (data.type === "message") {
-    div.className = "bg-blue-100 p-2 rounded flex justify-between";
+    div.className = "bg-blue-100 p-2 rounded flex justify-between flex-col";
     div.innerHTML = `
       <span>${data.user}: ${data.text} (${data.time})</span>
       <button onclick="deleteMsg('${data.id}')" class="text-red-500">❌</button>
+      <span class="seen text-xs text-gray-500">Seen: ${data.seen_by ? data.seen_by.join(", ") : ""}</span>
     `;
   }
 
   if (data.type === "image") {
+    div.className = "flex flex-col";
     div.innerHTML = `
       <b>${data.user}</b> (${data.time})<br>
       <img src="${data.img}" class="w-32 rounded"/>
       <button onclick="deleteMsg('${data.id}')" class="text-red-500">❌</button>
+      <span class="seen text-xs text-gray-500">Seen: ${data.seen_by ? data.seen_by.join(", ") : ""}</span>
     `;
   }
 
