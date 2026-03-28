@@ -4,11 +4,13 @@ import json
 from datetime import datetime
 import hashlib
 import time
+import os
 
-# 🔐 Users (hashed passwords)
+# 🔐 Hash password
 def hash_pass(p):
     return hashlib.sha256(p.encode()).hexdigest()
 
+# 🔒 Allowed users
 USERS = {
     "user1": hash_pass("1234"),
     "user2": hash_pass("5678")
@@ -57,6 +59,7 @@ async def handler(websocket):
                 for ws in clients.values():
                     await ws.send(json.dumps(data))
 
+                # 💾 Save chat
                 with open("chat.txt", "a") as f:
                     f.write(f"{data['user']}: {data['text']} ({data['time']})\n")
 
@@ -77,9 +80,12 @@ async def handler(websocket):
         if user in clients:
             del clients[user]
 
+# 🌍 IMPORTANT: Use Render PORT
 async def main():
-    async with websockets.serve(handler, "0.0.0.0", 3000):
-        print("✅ Server running...")
-        await asyncio.Future()
+    PORT = int(os.environ.get("PORT", 3000))
+
+    async with websockets.serve(handler, "0.0.0.0", PORT):
+        print(f"✅ Server running on port {PORT}")
+        await asyncio.Future()  # run forever
 
 asyncio.run(main())
