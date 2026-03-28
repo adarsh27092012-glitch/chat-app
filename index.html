@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html>
+<head>
+<script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-200 flex items-center justify-center h-screen">
+
+<div class="w-full max-w-md bg-white rounded-2xl shadow-lg flex flex-col">
+
+<div class="p-3 bg-green-600 text-white text-center font-bold">Chat App</div>
+
+<div id="login" class="p-4">
+  <input id="user" placeholder="Username" class="border p-2 w-full mb-2 rounded" />
+  <input id="pass" type="password" placeholder="Password" class="border p-2 w-full mb-2 rounded" />
+  <button onclick="login()" class="bg-green-600 text-white w-full p-2 rounded">Login</button>
+</div>
+
+<div id="chat" class="hidden flex flex-col h-96">
+  <div id="typing" class="text-sm text-gray-500 px-2"></div>
+  <div id="box" class="flex-1 overflow-y-auto p-3 space-y-2"></div>
+
+  <input type="file" onchange="sendImage(event)" class="p-2" />
+
+  <div class="flex p-2 gap-2">
+    <input id="msg" oninput="typing()" class="flex-1 border p-2 rounded" placeholder="Type message..." />
+    <button onclick="sendMsg()" class="bg-blue-500 text-white px-4 rounded">Send</button>
+  </div>
+</div>
+
+</div>
+
+<audio id="sound" src="https://www.soundjay.com/buttons/sounds/button-3.mp3"></audio>
+
+<script>
+const socket = new WebSocket("wss://YOUR_RENDER_URL");
+let username = "";
+let typingTimeout;
+
+socket.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+
+  if (data.type === "login" && data.status === "success") {
+    document.getElementById("login").style.display = "none";
+    document.getElementById("chat").style.display = "flex";
+    data.history.forEach(show);
+  }
+
+  if (data.type === "message" || data.type === "image") {
+    show(data);
+    document.getElementById("sound").play();
+  }
+
+  if (data.type === "typing") {
+    document.getElementById("typing").innerText = data.user + " is typing...";
+  }
+
+  if (data.type === "stop_typing") {
+    document.getElementById("typing").innerText = "";
+  }
+};
+
+function login() {
+  username = document.getElementById("user").value;
+  const password = document.getElementById("pass").value;
+
+  socket.send(JSON.stringify({type:"login", username, password}));
+}
+
+function sendMsg() {
+  const text = document.getElementById("msg").value;
+  socket.send(JSON.stringify({type:"message", user:username, text}));
+  document.getElementById("msg").value = "";
+}
+
+function sendImage(e) {
+  const file = e.target.files[0];
+  const reader = new FileReader();
+
+  reader.onload = () => {
+    socket.send(JSON.stringify({type:"image", user:username, img:reader.result}));
+  };
+
+  reader.readAsDataURL(file);
+}
+
+function typing() {
+  socket.send(JSON.stringify({type:"typing", user:username}));
+
+  clearTimeout(typingTimeout);
+  typingTimeout = setTimeout(() => {
+    socket.send(JSON.stringify({type:"stop_typing", user:username}));
+  }, 1000);
+}
+
+function show(data) {
+  const box = document.getElementById("box");
+  const div = document.createElement("div");
+
+  if (data.type === "message") {
+    div.className = "bg-blue-100 p-2 rounded";
+    div.innerText = `${data.user}: ${data.text} (${data.time})`;
+  }
+
+  if (data.type === "image") {
+    div.innerHTML = `<b>${data.user}</b> (${data.time})<br><img src="${data.img}" class="w-32 rounded"/>`;
+  }
+
+  box.appendChild(div);
+  box.scrollTop = box.scrollHeight;
+}
+</script>
+
+</body>
+</html>
