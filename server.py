@@ -12,8 +12,8 @@ def hash_pass(p):
 
 # 🔒 Allowed users
 USERS = {
-    "user1": hash_pass("1234"),
-    "user2": hash_pass("5678")
+    "Ad@2012": hash_pass("2012"),
+    "La@2014": hash_pass("2014")
 }
 
 clients = {}
