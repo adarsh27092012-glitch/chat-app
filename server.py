@@ -1,111 +1,91 @@
 import asyncio
+import websockets
 import json
+from datetime import datetime
 import hashlib
 import time
-import uuid
-from datetime import datetime
-from aiohttp import web
+import os
 
-# -------------------
-# Password & users
+# 🔐 Hash password
 def hash_pass(p):
     return hashlib.sha256(p.encode()).hexdigest()
 
+# 🔒 Allowed users
 USERS = {
     "user1": hash_pass("1234"),
     "user2": hash_pass("5678")
 }
 
-clients = {}       # username -> websocket
-chat_history = []  # all messages
-last_msg = {}      # anti-spam
+clients = {}
+chat_history = []
+last_msg = {}
 
-# -------------------
-# Serve index.html
-async def index(request):
-    return web.FileResponse('index.html')
-
-# -------------------
-# WebSocket handler
-async def websocket_handler(request):
-    ws = web.WebSocketResponse()
-    await ws.prepare(request)
-
+async def handler(websocket):
     user = None
-    clients_list = clients
+    try:
+        async for message in websocket:
+            data = json.loads(message)
 
-    async for msg in ws:
-        if msg.type != web.WSMsgType.TEXT:
-            continue
+            # 🔒 LOGIN
+            if data["type"] == "login":
+                username = data["username"]
+                password = hash_pass(data["password"])
 
-        data = json.loads(msg.data)
+                if username in USERS and USERS[username] == password:
+                    user = username
+                    clients[user] = websocket
 
-        # LOGIN
-        if data["type"] == "login":
-            username = data["username"]
-            password = hash_pass(data["password"])
-            if username in USERS and USERS[username] == password:
-                user = username
-                clients[user] = ws
-                await ws.send_json({
-                    "type": "login",
-                    "status": "success",
-                    "history": chat_history
-                })
-            else:
-                await ws.send_json({"type": "login", "status": "fail"})
+                    await websocket.send(json.dumps({
+                        "type": "login",
+                        "status": "success",
+                        "history": chat_history
+                    }))
+                else:
+                    await websocket.send(json.dumps({
+                        "type": "login",
+                        "status": "fail"
+                    }))
 
-        # MESSAGE
-        elif data["type"] == "message":
-            now = time.time()
-            if user in last_msg and now - last_msg[user] < 1:
-                continue
-            last_msg[user] = now
-            data["id"] = str(uuid.uuid4())
-            data["time"] = datetime.now().strftime("%H:%M")
-            data["seen_by"] = []
-            chat_history.append(data)
-            for cws in clients.values():
-                await cws.send_json(data)
+            # 💬 MESSAGE
+            elif data["type"] == "message":
+                now = time.time()
+                if user in last_msg and now - last_msg[user] < 1:
+                    continue
+                last_msg[user] = now
 
-        # DELETE
-        elif data["type"] == "delete":
-            msg_id = data["id"]
-            global chat_history
-            chat_history = [msg for msg in chat_history if msg.get("id") != msg_id]
-            for cws in clients.values():
-                await cws.send_json({"type": "delete", "id": msg_id})
+                data["time"] = datetime.now().strftime("%H:%M")
+                chat_history.append(data)
 
-        # SEEN
-        elif data["type"] == "seen":
-            msg_id = data["id"]
-            for msg in chat_history:
-                if msg.get("id") == msg_id and user not in msg["seen_by"]:
-                    msg["seen_by"].append(user)
-            # broadcast
-            for cws in clients.values():
-                seen_msg = next((m for m in chat_history if m["id"] == msg_id), None)
-                if seen_msg:
-                    await cws.send_json({
-                        "type": "seen",
-                        "id": msg_id,
-                        "seen_by": seen_msg["seen_by"]
-                    })
+                for ws in clients.values():
+                    await ws.send(json.dumps(data))
 
-        # TYPING
-        elif data["type"] in ["typing", "stop_typing"]:
-            for cws in clients.values():
-                await cws.send_json(data)
+                # 💾 Save chat
+                with open("chat.txt", "a") as f:
+                    f.write(f"{data['user']}: {data['text']} ({data['time']})\n")
 
-    if user and user in clients:
-        del clients[user]
+            # 📸 IMAGE
+            elif data["type"] == "image":
+                data["time"] = datetime.now().strftime("%H:%M")
+                chat_history.append(data)
 
-    return ws
+                for ws in clients.values():
+                    await ws.send(json.dumps(data))
 
-# -------------------
-app = web.Application()
-app.router.add_get('/', index)
-app.router.add_get('/ws', websocket_handler)
+            # 💬 TYPING
+            elif data["type"] in ["typing", "stop_typing"]:
+                for ws in clients.values():
+                    await ws.send(json.dumps(data))
 
-if __name__ == '__main__':
-    web.run_app(app, port=int(os.environ.get("PORT", 3000)))
+    finally:
+        if user in clients:
+            del clients[user]
+
+# 🌍 IMPORTANT: Use Render PORT
+async def main():
+    PORT = int(os.environ.get("PORT", 3000))
+
+    async with websockets.serve(handler, "0.0.0.0", PORT):
+        print(f"✅ Server running on port {PORT}")
+        await asyncio.Future()  # run forever
+
+asyncio.run(main())
