@@ -7,6 +7,7 @@
 
 <div class="w-full max-w-md bg-white rounded-2xl shadow-lg flex flex-col">
 
+  <!-- Header -->
   <div class="p-3 bg-green-600 text-white text-center font-bold">Chat App</div>
 
   <!-- Login Screen -->
@@ -32,45 +33,53 @@
 </div>
 
 <script>
-const socket = new WebSocket("wss://chat-app-uncb.onrender.com"); // 🔥 Your global server
+const socket = new WebSocket("wss://chat-app-uncb.onrender.com"); // 🔥 Replace with your deployed server
 let username = "";
 let typingTimeout;
 
-socket.onopen = () => console.log("✅ Connected");
-socket.onerror = (e) => console.log("❌ Error", e);
+socket.onopen = () => console.log("✅ Connected to server");
+socket.onerror = (e) => console.log("❌ WebSocket Error:", e);
 
 socket.onmessage = (event) => {
   const data = JSON.parse(event.data);
 
+  // Login success
   if (data.type === "login" && data.status === "success") {
     document.getElementById("login").style.display = "none";
     document.getElementById("chat").style.display = "flex";
     data.history.forEach(show);
   }
 
+  // New message or image
   if (data.type === "message" || data.type === "image") {
     show(data);
-    markSeen(data.id); // ✅ Mark message as seen
+    markSeen(data.id); // 👀 Mark message as seen after appending
   }
 
+  // Delete message
   if (data.type === "delete") {
     const msg = document.querySelector(`[data-id='${data.id}']`);
     if (msg) msg.remove();
   }
 
+  // Typing indicators
   if (data.type === "typing") {
     document.getElementById("typing").innerText = data.user + " is typing...";
   }
-
   if (data.type === "stop_typing") {
     document.getElementById("typing").innerText = "";
   }
 
+  // Update seen status
   if (data.type === "seen") {
     const msg = document.querySelector(`[data-id='${data.id}']`);
     if(msg) {
       const seenText = msg.querySelector(".seen");
-      if(seenText) seenText.innerText = "Seen: " + data.seen_by.join(", ");
+      if(seenText) {
+        // Exclude current user from seen list
+        const othersSeen = data.seen_by.filter(u => u !== username);
+        seenText.innerText = "Seen: " + (othersSeen.join(", "));
+      }
     }
   }
 };
@@ -79,37 +88,42 @@ socket.onmessage = (event) => {
 function login() {
   username = document.getElementById("user").value;
   const password = document.getElementById("pass").value;
-  socket.send(JSON.stringify({type:"login", username, password}));
+  if(username && password) {
+    socket.send(JSON.stringify({type:"login", username, password}));
+  } else {
+    alert("Enter username and password");
+  }
 }
 
-// 💬 Send message
+// 💬 Send text message
 function sendMsg() {
   const text = document.getElementById("msg").value;
-  socket.send(JSON.stringify({type:"message", user:username, text}));
-  document.getElementById("msg").value = "";
+  if(text.trim() !== "") {
+    socket.send(JSON.stringify({type:"message", user:username, text}));
+    document.getElementById("msg").value = "";
+  }
 }
 
 // 📸 Send image
 function sendImage(e) {
   const file = e.target.files[0];
-  const reader = new FileReader();
-
-  reader.onload = () => {
-    socket.send(JSON.stringify({type:"image", user:username, img:reader.result}));
-  };
-
-  reader.readAsDataURL(file);
+  if(file){
+    const reader = new FileReader();
+    reader.onload = () => {
+      socket.send(JSON.stringify({type:"image", user:username, img:reader.result}));
+    };
+    reader.readAsDataURL(file);
+  }
 }
 
 // ❌ Delete message
 function deleteMsg(id) {
-  socket.send(JSON.stringify({type: "delete", id: id}));
+  socket.send(JSON.stringify({type:"delete", id:id}));
 }
 
 // ✍️ Typing indicator
 function typing() {
   socket.send(JSON.stringify({type:"typing", user:username}));
-
   clearTimeout(typingTimeout);
   typingTimeout = setTimeout(() => {
     socket.send(JSON.stringify({type:"stop_typing", user:username}));
@@ -125,15 +139,14 @@ function markSeen(id){
 function show(data) {
   const box = document.getElementById("box");
   const div = document.createElement("div");
-
   div.setAttribute("data-id", data.id);
 
   if (data.type === "message") {
-    div.className = "bg-blue-100 p-2 rounded flex justify-between flex-col";
+    div.className = "bg-blue-100 p-2 rounded flex flex-col justify-between";
     div.innerHTML = `
       <span>${data.user}: ${data.text} (${data.time})</span>
       <button onclick="deleteMsg('${data.id}')" class="text-red-500">❌</button>
-      <span class="seen text-xs text-gray-500">Seen: ${data.seen_by ? data.seen_by.join(", ") : ""}</span>
+      <span class="seen text-xs text-gray-500">Seen: ${data.seen_by ? data.seen_by.filter(u => u!==username).join(", ") : ""}</span>
     `;
   }
 
@@ -143,7 +156,7 @@ function show(data) {
       <b>${data.user}</b> (${data.time})<br>
       <img src="${data.img}" class="w-32 rounded"/>
       <button onclick="deleteMsg('${data.id}')" class="text-red-500">❌</button>
-      <span class="seen text-xs text-gray-500">Seen: ${data.seen_by ? data.seen_by.join(", ") : ""}</span>
+      <span class="seen text-xs text-gray-500">Seen: ${data.seen_by ? data.seen_by.filter(u => u!==username).join(", ") : ""}</span>
     `;
   }
 
