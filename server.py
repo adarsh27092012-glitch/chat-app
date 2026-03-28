@@ -5,12 +5,13 @@ from datetime import datetime
 import hashlib
 import time
 import os
+import uuid
 
 # 🔐 Hash password
 def hash_pass(p):
     return hashlib.sha256(p.encode()).hexdigest()
 
-# 🔒 Allowed users
+# 🔒 Users
 USERS = {
     "user1": hash_pass("1234"),
     "user2": hash_pass("5678")
@@ -53,23 +54,37 @@ async def handler(websocket):
                     continue
                 last_msg[user] = now
 
+                data["id"] = str(uuid.uuid4())
                 data["time"] = datetime.now().strftime("%H:%M")
                 chat_history.append(data)
 
                 for ws in clients.values():
                     await ws.send(json.dumps(data))
 
-                # 💾 Save chat
                 with open("chat.txt", "a") as f:
                     f.write(f"{data['user']}: {data['text']} ({data['time']})\n")
 
             # 📸 IMAGE
             elif data["type"] == "image":
+                data["id"] = str(uuid.uuid4())
                 data["time"] = datetime.now().strftime("%H:%M")
                 chat_history.append(data)
 
                 for ws in clients.values():
                     await ws.send(json.dumps(data))
+
+            # ❌ DELETE MESSAGE
+            elif data["type"] == "delete":
+                msg_id = data["id"]
+
+                global chat_history
+                chat_history = [msg for msg in chat_history if msg.get("id") != msg_id]
+
+                for ws in clients.values():
+                    await ws.send(json.dumps({
+                        "type": "delete",
+                        "id": msg_id
+                    }))
 
             # 💬 TYPING
             elif data["type"] in ["typing", "stop_typing"]:
@@ -80,12 +95,11 @@ async def handler(websocket):
         if user in clients:
             del clients[user]
 
-# 🌍 IMPORTANT: Use Render PORT
 async def main():
     PORT = int(os.environ.get("PORT", 3000))
 
     async with websockets.serve(handler, "0.0.0.0", PORT):
         print(f"✅ Server running on port {PORT}")
-        await asyncio.Future()  # run forever
+        await asyncio.Future()
 
 asyncio.run(main())
